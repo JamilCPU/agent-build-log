@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent Build Log</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0a0c10;
+    --surface: #111318;
+    --border: #1e2130;
+    --text: #c9d1d9;
+    --muted: #4a5568;
+    --accent: #00d4aa;
+    --accent-dim: rgba(0,212,170,0.1);
+    --mono: 'JetBrains Mono', monospace;
+    --sans: 'Inter', sans-serif;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 14px;
+    min-height: 100vh;
+  }
+
+  /* ── Header ── */
+  header {
+    border-bottom: 1px solid var(--border);
+    padding: 0 2rem;
+    height: 56px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    background: rgba(10,12,16,0.95);
+    backdrop-filter: blur(8px);
+    z-index: 100;
+  }
+
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .logo-mark {
+    width: 28px;
+    height: 28px;
+    border: 2px solid var(--accent);
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--accent);
+  }
+
+  .logo-text {
+    font-family: var(--mono);
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text);
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+
+  .header-right {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+  }
+
+  .pulse {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--accent);
+    animation: pulse 2s infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+
+  .last-poll {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  /* ── Layout ── */
+  .layout {
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    min-height: calc(100vh - 56px);
+  }
+
+  /* ── Sidebar ── */
+  aside {
+    border-right: 1px solid var(--border);
+    padding: 1.5rem 1rem;
+    position: sticky;
+    top: 56px;
+    height: calc(100vh - 56px);
+    overflow-y: auto;
+  }
+
+  .sidebar-section {
+    margin-bottom: 2rem;
+  }
+
+  .sidebar-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--muted);
+    margin-bottom: 0.75rem;
+  }
+
+  .filter-btn {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 0.4rem 0.6rem;
+    border: none;
+    background: none;
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: 12px;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: all 0.15s;
+    margin-bottom: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .filter-btn:hover { background: var(--surface); color: var(--text); }
+  .filter-btn.active { background: var(--accent-dim); color: var(--accent); }
+
+  /* ── Stats bar ── */
+  .stats-bar {
+    display: flex;
+    gap: 1px;
+    background: var(--border);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .stat {
+    flex: 1;
+    background: var(--surface);
+    padding: 1rem 1.5rem;
+    text-align: center;
+  }
+
+  .stat-value {
+    font-family: var(--mono);
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--accent);
+    display: block;
+  }
+
+  .stat-label {
+    font-size: 11px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-top: 2px;
+  }
+
+  /* ── Main content ── */
+  main {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .events-container {
+    padding: 1.5rem;
+    flex: 1;
+  }
+
+  /* ── Event card ── */
+  .event-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1rem 1.25rem;
+    margin-bottom: 0.75rem;
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: 1rem;
+    align-items: start;
+    transition: border-color 0.15s;
+  }
+
+  .event-card:hover { border-color: #2d3148; }
+
+  .event-card.agent-post { border-left: 3px solid var(--accent); }
+  .event-card.github-api { border-left: 3px solid #4a5568; }
+
+  .event-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+
+  .event-body { min-width: 0; }
+
+  .event-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    margin-bottom: 0.4rem;
+  }
+
+  .agent-badge {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 700;
+    padding: 0.15rem 0.5rem;
+    border-radius: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .repo-badge {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: #60a5fa;
+    background: rgba(96,165,250,0.1);
+    padding: 0.15rem 0.5rem;
+    border-radius: 4px;
+  }
+
+  .branch-badge {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  .event-message {
+    font-size: 13px;
+    color: var(--text);
+    margin-bottom: 0.4rem;
+    line-height: 1.4;
+  }
+
+  .event-meta {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+
+  .sha {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    text-decoration: none;
+  }
+
+  .sha:hover { color: var(--accent); }
+
+  .files-list {
+    display: flex;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+    margin-top: 0.5rem;
+  }
+
+  .file-chip {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--muted);
+    background: rgba(255,255,255,0.04);
+    padding: 0.1rem 0.4rem;
+    border-radius: 3px;
+  }
+
+  .event-time {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  /* ── Empty state ── */
+  .empty {
+    text-align: center;
+    padding: 4rem 2rem;
+    color: var(--muted);
+  }
+
+  .empty-title {
+    font-family: var(--mono);
+    font-size: 14px;
+    margin-bottom: 0.5rem;
+    color: var(--text);
+  }
+
+  /* ── Loading ── */
+  .loading {
+    display: flex;
+    justify-content: center;
+    padding: 3rem;
+  }
+
+  .spinner {
+    width: 20px;
+    height: 20px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── Scrollbar ── */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-mark">AB</div>
+    <span class="logo-text">Agent Build Log</span>
+  </div>
+  <div class="header-right">
+    <div class="pulse"></div>
+    <span class="last-poll" id="lastPoll">polling...</span>
+  </div>
+</header>
+
+<div class="layout">
+  <aside>
+    <div class="sidebar-section">
+      <div class="sidebar-label">Agents</div>
+      <button class="filter-btn active" data-filter="agent" data-value="">All agents</button>
+      <div id="agentFilters"></div>
+    </div>
+    <div class="sidebar-section">
+      <div class="sidebar-label">Repos</div>
+      <button class="filter-btn active" data-filter="repo" data-value="">All repos</button>
+      <div id="repoFilters"></div>
+    </div>
+  </aside>
+
+  <main>
+    <div class="stats-bar">
+      <div class="stat">
+        <span class="stat-value" id="statTotal">—</span>
+        <div class="stat-label">Total pushes</div>
+      </div>
+      <div class="stat">
+        <span class="stat-value" id="statAgents">—</span>
+        <div class="stat-label">Active agents</div>
+      </div>
+      <div class="stat">
+        <span class="stat-value" id="statRepos">—</span>
+        <div class="stat-label">Repos tracked</div>
+      </div>
+    </div>
+
+    <div class="events-container">
+      <div id="events"><div class="loading"><div class="spinner"></div></div></div>
+    </div>
+  </main>
+</div>
+
+<script>
+const AGENT_COLORS = [
+  ['#a78bfa','rgba(167,139,250,0.15)'],
+  ['#f472b6','rgba(244,114,182,0.15)'],
+  ['#fb923c','rgba(251,146,60,0.15)'],
+  ['#34d399','rgba(52,211,153,0.15)'],
+  ['#60a5fa','rgba(96,165,250,0.15)'],
+  ['#facc15','rgba(250,204,21,0.15)'],
+];
+const agentColorMap = {};
+let colorIdx = 0;
+
+function agentColor(name) {
+  if (!name) return ['#4a5568','rgba(74,85,104,0.15)'];
+  if (!agentColorMap[name]) {
+    agentColorMap[name] = AGENT_COLORS[colorIdx++ % AGENT_COLORS.length];
+  }
+  return agentColorMap[name];
+}
+
+function timeAgo(iso) {
+  const diff = Date.now() - new Date(iso).getTime();
+  const s = Math.floor(diff / 1000);
+  if (s < 60) return `${s}s ago`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  return `${d}d ago`;
+}
+
+function agentEmoji(agent) {
+  if (!agent) return '📦';
+  const a = agent.toLowerCase();
+  if (a.includes('digest') || a.includes('news')) return '📰';
+  if (a.includes('page') || a.includes('creator')) return '📄';
+  if (a.includes('research')) return '🔬';
+  if (a.includes('coder') || a.includes('code')) return '💻';
+  if (a.includes('test')) return '🧪';
+  if (a.includes('deploy') || a.includes('devops')) return '🚀';
+  return '🤖';
+}
+
+function renderEvent(e) {
+  const [fg, bg] = agentColor(e.agent);
+  const files = e.files_changed || [];
+  const isAgentPost = e.source === 'agent_post';
+
+  return `
+    <div class="event-card ${e.source}">
+      <div class="event-icon" style="background:${bg}; font-size:16px">${agentEmoji(e.agent)}</div>
+      <div class="event-body">
+        <div class="event-header">
+          ${e.agent
+            ? `<span class="agent-badge" style="color:${fg};background:${bg}">${e.agent}</span>`
+            : `<span class="agent-badge" style="color:#4a5568;background:rgba(74,85,104,0.15)">human</span>`
+          }
+          <span class="repo-badge">${e.repo}</span>
+          <span class="branch-badge">↳ ${e.branch}</span>
+          ${isAgentPost ? '<span class="agent-badge" style="color:#00d4aa;background:rgba(0,212,170,0.1);font-size:9px">DIRECT</span>' : ''}
+        </div>
+        <div class="event-message">${escHtml(e.commit_message || '(no message)')}</div>
+        <div class="event-meta">
+          ${e.github_url && e.commit_sha
+            ? `<a class="sha" href="${e.github_url}" target="_blank">${e.commit_sha}</a>`
+            : e.commit_sha ? `<span class="sha">${e.commit_sha}</span>` : ''
+          }
+          ${e.author_name ? `<span class="sha">${escHtml(e.author_name)}</span>` : ''}
+        </div>
+        ${files.length ? `<div class="files-list">${files.slice(0,6).map(f =>
+          `<span class="file-chip">${escHtml(f.split('/').pop())}</span>`
+        ).join('')}${files.length > 6 ? `<span class="file-chip">+${files.length-6}</span>` : ''}</div>` : ''}
+      </div>
+      <div class="event-time">${timeAgo(e.timestamp)}</div>
+    </div>`;
+}
+
+function escHtml(s) {
+  return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// State
+let activeAgent = '';
+let activeRepo = '';
+
+async function loadEvents() {
+  const params = new URLSearchParams({ limit: 50 });
+  if (activeAgent) params.set('agent', activeAgent);
+  if (activeRepo) params.set('repo', activeRepo);
+
+  const res = await fetch(`/api/events?${params}`);
+  const data = await res.json();
+  const el = document.getElementById('events');
+
+  if (!data.events.length) {
+    el.innerHTML = `<div class="empty">
+      <div class="empty-title">No events yet</div>
+      <div>Waiting for agents to push commits…</div>
+    </div>`;
+    return;
+  }
+
+  el.innerHTML = data.events.map(renderEvent).join('');
+}
+
+async function loadStats() {
+  const res = await fetch('/api/stats');
+  const s = await res.json();
+  document.getElementById('statTotal').textContent = s.total_events;
+  document.getElementById('statAgents').textContent = s.agents.length;
+  document.getElementById('statRepos').textContent = s.repos.length;
+  document.getElementById('lastPoll').textContent =
+    s.last_event ? `last: ${timeAgo(s.last_event)}` : 'no events';
+}
+
+async function loadFilters() {
+  const res = await fetch('/api/filters');
+  const f = await res.json();
+
+  const agentEl = document.getElementById('agentFilters');
+  agentEl.innerHTML = f.agents.map(a => {
+    const [fg] = agentColor(a);
+    return `<button class="filter-btn" data-filter="agent" data-value="${escHtml(a)}"
+      style="color:${fg}">${escHtml(a)}</button>`;
+  }).join('');
+
+  const repoEl = document.getElementById('repoFilters');
+  repoEl.innerHTML = f.repos.map(r =>
+    `<button class="filter-btn" data-filter="repo" data-value="${escHtml(r)}">${escHtml(r)}</button>`
+  ).join('');
+
+  attachFilterHandlers();
+}
+
+function attachFilterHandlers() {
+  document.querySelectorAll('.filter-btn').forEach(btn => {
+    btn.onclick = () => {
+      const type = btn.dataset.filter;
+      const val = btn.dataset.value;
+      if (type === 'agent') activeAgent = val;
+      if (type === 'repo') activeRepo = val;
+
+      document.querySelectorAll(`.filter-btn[data-filter="${type}"]`).forEach(b =>
+        b.classList.toggle('active', b.dataset.value === val)
+      );
+      loadEvents();
+    };
+  });
+}
+
+async function refresh() {
+  await Promise.all([loadEvents(), loadStats(), loadFilters()]);
+}
+
+refresh();
+setInterval(refresh, 60_000);
+</script>
+</body>
+</html>

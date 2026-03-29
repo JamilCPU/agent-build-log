@@ -1,0 +1,1 @@
+A Docker-based web app that serves as a central hub for all agentic Git activity across the JamilCPU GitHub account. Polls GitHub Events API every 5 minutes for push events, accepts direct POST payloads from OpenClaw agents, stores everything in SQLite, and serves a dark terminal-aesthetic frontend showing a live timeline of agent commits grouped by agent/repo.
