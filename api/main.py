@@ -96,17 +96,34 @@ def insert_event(data: dict) -> bool:
 
 
 def extract_agent(message: str, author: str) -> Optional[str]:
-    """Parse [agent: name] from commit message, or infer from author."""
-    m = re.search(r'\[agent:\s*([^\]]+)\]', message or "", re.IGNORECASE)
+    """Detect agent commits. Returns agent name or None (personal commit)."""
+    msg = message or ""
+
+    # Explicit tag: [agent: name]
+    m = re.search(r'\[agent:\s*([^\]]+)\]', msg, re.IGNORECASE)
     if m:
         return m.group(1).strip()
-    # Known bot author patterns
-    if author and any(x in author.lower() for x in ["openclaw", "agent", "bot", "pi1"]):
+
+    # Any Co-Authored-By line — extract the name before the email
+    # Catches Claude Code, GitHub Copilot, Cursor, Devin, etc.
+    for co_line in re.findall(r'Co-[Aa]uthored-[Bb]y:\s*([^\n]+)', msg):
+        name = re.sub(r'<[^>]+>', '', co_line).strip().rstrip(',')
+        if name:
+            return name
+
+    # Known bot author name/email patterns
+    if author and any(x in author.lower() for x in [
+        "openclaw", "agent", "bot", "pi1", "claude",
+        "copilot", "cursor", "devin", "coderabbit", "sweep",
+    ]):
         return author.split("@")[0]
+
     return None
 
 
 # ── GitHub Poller ─────────────────────────────────────────────────────────────
+
+_last_polled: str = ""
 
 async def poll_github():
     if not GITHUB_TOKEN:
@@ -153,6 +170,10 @@ async def poll_github():
                 eid = event_id(sha, repo)
                 agent = extract_agent(message, author_name)
 
+                # Skip personal (non-agent) commits
+                if agent is None:
+                    continue
+
                 inserted = insert_event({
                     "id": eid,
                     "repo": repo,
@@ -170,8 +191,114 @@ async def poll_github():
                 if inserted:
                     new_count += 1
 
-        if new_count:
-            log.info(f"Polled GitHub: {new_count} new events")
+        global _last_polled
+        _last_polled = datetime.now(timezone.utc).isoformat()
+        log.info(f"Polled GitHub: {new_count} new agent events")
+
+
+# ── Historical backfill ───────────────────────────────────────────────────────
+
+async def _backfill_search(client: httpx.AsyncClient, headers: dict, query: str, seen_shas: set = None) -> int:
+    """Search commits by query string, ingest all matching agent commits."""
+    new_count = 0
+    page = 1
+    if seen_shas is None:
+        seen_shas = set()
+    search_headers = {**headers, "Accept": "application/vnd.github.cloak-preview+json"}
+
+    while True:
+        try:
+            resp = await client.get(
+                "https://api.github.com/search/commits",
+                headers=search_headers,
+                params={"q": query, "per_page": 100, "page": page, "sort": "committer-date", "order": "desc"},
+            )
+            if resp.status_code == 422:
+                break  # no results for this query
+            resp.raise_for_status()
+        except Exception as e:
+            log.error(f"Backfill search error (page {page}): {e}")
+            break
+
+        data = resp.json()
+        items = data.get("items", [])
+        if not items:
+            break
+
+        for item in items:
+            commit = item.get("commit", {})
+            message = commit.get("message", "")
+            author = commit.get("author", {})
+            author_name = author.get("name", "")
+            author_email = author.get("email", "")
+            sha = item.get("sha", "")
+            if sha in seen_shas:
+                continue
+            seen_shas.add(sha)
+
+            repo_full = item.get("repository", {}).get("full_name", "")
+            repo = repo_full.replace(f"{GITHUB_USERNAME}/", "")
+            committed_at = author.get("date", datetime.now(timezone.utc).isoformat())
+
+            agent = extract_agent(message, author_name)
+            if agent is None:
+                continue
+
+            eid = event_id(sha, repo)
+            inserted = insert_event({
+                "id": eid,
+                "repo": repo,
+                "branch": "main",
+                "agent": agent,
+                "commit_sha": sha[:7],
+                "commit_message": message.split("\n")[0][:200],
+                "author_name": author_name,
+                "author_email": author_email,
+                "files_changed": [],
+                "timestamp": committed_at,
+                "source": "github_api",
+                "github_url": item.get("html_url", f"https://github.com/{repo_full}/commit/{sha}"),
+            })
+            if inserted:
+                new_count += 1
+
+        # GitHub search caps at 1000 results (10 pages)
+        if page >= 10 or len(items) < 100:
+            break
+        page += 1
+
+    return new_count
+
+
+@app.get("/api/backfill")
+async def backfill():
+    """Scan all historical commits on this account for agent-authored ones."""
+    if not GITHUB_TOKEN:
+        raise HTTPException(status_code=503, detail="GITHUB_TOKEN not configured")
+
+    headers = {
+        "Authorization": f"token {GITHUB_TOKEN}",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+
+    total = 0
+    async with httpx.AsyncClient(timeout=30) as client:
+        queries = [
+            f"co-authored-by:claude author:{GITHUB_USERNAME}",           # Claude Code / Anthropic
+            f"co-authored-by:copilot author:{GITHUB_USERNAME}",          # GitHub Copilot
+            f"co-authored-by:cursor author:{GITHUB_USERNAME}",           # Cursor
+            f"co-authored-by:devin author:{GITHUB_USERNAME}",            # Devin
+            f"co-authored-by:coderabbit author:{GITHUB_USERNAME}",       # CodeRabbit
+            f"co-authored-by:sweep author:{GITHUB_USERNAME}",            # Sweep
+            f"co-authored-by:noreply@anthropic.com author:{GITHUB_USERNAME}",
+            f"[agent: author:{GITHUB_USERNAME}",                         # explicit tag
+        ]
+        seen_shas: set = set()
+        for q in queries:
+            total += await _backfill_search(client, headers, q, seen_shas)
+
+    log.info(f"Backfill complete: {total} new events ingested")
+    return {"ok": True, "new_events": total}
 
 
 # ── Ingest endpoint ───────────────────────────────────────────────────────────
@@ -265,6 +392,8 @@ async def stats():
         "agents": [dict(r) for r in agents],
         "repos": [dict(r) for r in repos],
         "last_event": recent[0] if recent else None,
+        "last_polled": _last_polled,
+        "poll_interval_minutes": POLL_INTERVAL,
     }
 
 
@@ -285,7 +414,7 @@ async def filters():
 
 # ── Static frontend ───────────────────────────────────────────────────────────
 
-WEB_DIR = Path(__file__).parent.parent / "web"
+WEB_DIR = Path(os.getenv("WEB_DIR", "/web"))
 
 @app.get("/")
 async def index():

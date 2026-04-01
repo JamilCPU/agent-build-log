@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Agent Build Log</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
@@ -505,8 +506,9 @@ async function loadStats() {
   document.getElementById('statTotal').textContent = s.total_events;
   document.getElementById('statAgents').textContent = s.agents.length;
   document.getElementById('statRepos').textContent = s.repos.length;
-  document.getElementById('lastPoll').textContent =
-    s.last_event ? `last: ${timeAgo(s.last_event)}` : 'no events';
+  document.getElementById('lastPoll').textContent = s.last_polled
+    ? `polled ${timeAgo(s.last_polled)} · every ${s.poll_interval_minutes}m`
+    : 'awaiting first poll';
 }
 
 async function loadFilters() {

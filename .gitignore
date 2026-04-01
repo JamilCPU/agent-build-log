@@ -3,3 +3,8 @@ data/
 __pycache__/
 *.pyc
 .DS_Store
+
+node_modules/
+test-results/
+package-lock.json
+package.json
